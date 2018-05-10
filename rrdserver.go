@@ -190,6 +190,9 @@ func query(w http.ResponseWriter, r *http.Request) {
 			if to.After(lastUpdate) && lastUpdate.After(from) {
 				to = lastUpdate
 			}
+			//This line is to enable rrd calculations
+			CDefres := rrd.CDef("vdef1", "def1,def2,+")
+			// end of calculations
 			fetchRes, err := rrd.Fetch(filePath, "AVERAGE", from, to, time.Duration(config.Server.Step)*time.Second)
 			if err != nil {
 				fmt.Println("ERROR: Cannot retrieve time series data from ", filePath)
