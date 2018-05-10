@@ -193,10 +193,11 @@ func query(w http.ResponseWriter, r *http.Request) {
 			//This line is to enable rrd calculations
 			DEFA = filepathA ?
 			DEFB = filepathB ?
-			rpn = (m:filepathA, m:filepathB,+)
+			rpn = (m:DEFA, m:DEFB,+)
 			newRPN = []
+			
 			for e in rpn.split (",")
-			    if e.starts with ("in: ") and e.contains(".rrd")
+			    if e.starts with ("m: ") and e.contains(".rrd")
 			           e.replace("m:"," ")
 				   name = extract(e)
 			           rrd.def(name,e)
