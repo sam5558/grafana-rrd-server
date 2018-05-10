@@ -191,8 +191,20 @@ func query(w http.ResponseWriter, r *http.Request) {
 				to = lastUpdate
 			}
 			//This line is to enable rrd calculations
-			CDefres := rrd.CDef("vdef1", "def1,def2,+")
-			// end of calculations
+			DEFA = filepathA ?
+			DEFB = filepathB ?
+			rpn = (m:filepathA, m:filepathB,+)
+			newRPN = []
+			for e in rpn.split (",")
+			    if e.starts with ("in: ") and e.contains(".rrd")
+			           e.replace("m:"," ")
+				   name = extract(e)
+			           rrd.def(name,e)
+			           newRPN.insert(name)
+			    else
+			           newRPN.insert(e)
+			CDefres := rrd.CDef("count", newRPN)
+			// end of calculations CDefres := rrd.CDef("count", "def1,def2,+")
 			fetchRes, err := rrd.Fetch(filePath, "AVERAGE", from, to, time.Duration(config.Server.Step)*time.Second)
 			if err != nil {
 				fmt.Println("ERROR: Cannot retrieve time series data from ", filePath)
