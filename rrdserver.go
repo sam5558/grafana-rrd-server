@@ -45,6 +45,7 @@ type QueryRequest struct {
 		Target string `json:"target"`
 		RefID  string `json:"refId"`
 		Hide   bool   `json:"hide"`
+		alias   string `json:"alias"`
 		Type   string `json:"type"`
 	} `json:"targets"`
 	Format        string `json:"format"`
@@ -191,11 +192,10 @@ func query(w http.ResponseWriter, r *http.Request) {
 				to = lastUpdate
 			}
 			//This line is to enable rrd calculations
-			DEFA = filepathA ?
-			DEFB = filepathB ?
-			rpn = (m:DEFA, m:DEFB,+)
+			//DEFA = filepathA ?
+			//DEFB = filepathB ?
+			//rpn = (m:DEFA,m:DEFB,+)
 			newRPN = []
-			
 			for e in rpn.split(",")
 			    if e.starts with ("m: ") and e.contains(".rrd")
 			           e.replace("m:"," ")
