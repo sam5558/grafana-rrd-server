@@ -196,7 +196,7 @@ func query(w http.ResponseWriter, r *http.Request) {
 			rpn = (m:DEFA, m:DEFB,+)
 			newRPN = []
 			
-			for e in rpn.split (",")
+			for e in rpn.split(",")
 			    if e.starts with ("m: ") and e.contains(".rrd")
 			           e.replace("m:"," ")
 				   name = extract(e)
