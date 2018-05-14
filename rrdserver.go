@@ -45,7 +45,6 @@ type QueryRequest struct {
 		Target string `json:"target"`
 		RefID  string `json:"refId"`
 		Hide   bool   `json:"hide"`
-		alias   string `json:"alias"`
 		Type   string `json:"type"`
 	} `json:"targets"`
 	Format        string `json:"format"`
@@ -116,6 +115,7 @@ func respondJSON(w http.ResponseWriter, result interface{}) {
 }
 
 func hello(w http.ResponseWriter, r *http.Request) {
+        fmt.Println("==================")
 	result := ErrorResponse{Message: "hello"}
 	respondJSON(w, result)
 }
@@ -124,7 +124,8 @@ func search(w http.ResponseWriter, r *http.Request) {
 	var result []string
 	err := filepath.Walk(config.Server.RrdPath,
 		func(path string, info os.FileInfo, err error) error {
-			if info.IsDir() || !strings.Contains(info.Name(), ".rrd") {
+			if info.IsDir() || !strings.Contains(info.Name(), ".rrd") || info.Name()[0:1] == "." {
+                                fmt.Println("==================")
 				return nil
 			}
 			rel, _ := filepath.Rel(config.Server.RrdPath, path)
@@ -169,11 +170,86 @@ func query(w http.ResponseWriter, r *http.Request) {
 	to, _ := time.Parse(time.RFC3339Nano, queryRequest.Range.To)
 
 	var result []QueryResponse
+	var vtmp string
+	var dstmp string
+	e := rrd.NewExporter()
 	for _, target := range queryRequest.Targets {
+		cdefcount := 0
 		ds := target.Target[strings.LastIndex(target.Target, ":")+1 : len(target.Target)]
 		rrdDsRep := regexp.MustCompile(`:` + ds + `$`)
 		fileSearchPath := rrdDsRep.ReplaceAllString(target.Target, "")
+		if strings.Contains(fileSearchPath, "CDEF"){
+			fileSearchPath = target.Target
+			var cdefpoints [][]float64
+			var n_file string = strings.Join(strings.Split(fileSearchPath, ":")[1:], ":")
+      var chaine []string = strings.Split(n_file, ",")
+			var cdefstring []string
+			var filelastup string
+			for ind,element := range chaine{
+				if strings.Contains(element, "m"){
+					tbtmp := strings.Split(element, ":")
+					vtmp = strings.Join(tbtmp[1:len(tbtmp) - 1],":")
+					dstmp = tbtmp[len(tbtmp) - 1]
+				}else{
+					vtmp = element
+				}
+				file := strings.TrimRight(config.Server.RrdPath, "/") + "/" + strings.Replace(vtmp, ":", "/", -1) + ".rrd"
+				if _, err = os.Stat(file); err != nil {
+					fmt.Println("File", file, "does not exist")
+					cdefstring = append(cdefstring, element)
+					continue
+				}
+				filelastup = file
+				defname := "def" + strconv.Itoa(ind)
+				e.Def(defname, file, dstmp, "AVERAGE")
+				e.XportDef(defname, dstmp)
+        cdefstring = append(cdefstring, defname)
+
+       }
+
+			 if filelastup != "" {
+					 infoRes, err := rrd.Info(filelastup)
+			 			if err != nil {
+			 				fmt.Println("ERROR: Cannot retrieve information from ", filelastup)
+			 				fmt.Println(err)
+			 			}
+			 			lastUpdate := time.Unix(int64(infoRes["last_update"].(uint)), 0)
+			 			if to.After(lastUpdate) && lastUpdate.After(from) {
+			 				to = lastUpdate
+			 			}
+					 fmt.Println(strings.Join(cdefstring, ","))
+					 e.CDef("vdef" + strconv.Itoa(cdefcount), strings.Join(cdefstring, ","))
+					 e.XportDef("vdef" + strconv.Itoa(cdefcount), "op")
+					 cdefcount++
+
+					 //==============================================================================
+
+					 xportRes, err := e.Xport(from, to, time.Duration(config.Server.Step)*time.Second)
+		 				if err != nil {
+		 					fmt.Println("============", err)
+		 				}
+		 				defer xportRes.FreeValues()
+
+		 			row := 0
+		 			for ti := xportRes.Start.Add(xportRes.Step); ti.Before(lastUpdate) || ti.Equal(lastUpdate); ti = ti.Add(xportRes.Step) {
+						value := xportRes.ValueAt(len(xportRes.Legends) - 1, row)
+						if !math.IsNaN(value) {
+							product := float64(config.Server.Multiplier) * value
+							cdefpoints = append(cdefpoints, []float64{product, float64(ti.Unix()) * 1000})
+						}
+
+		 				row++
+		 		}
+				result = append(result, QueryResponse{Target: fileSearchPath, DataPoints: cdefpoints})
+				continue
+		//==============================================================================
+		}
+
+
+		}
+		//fmt.Println("file search 1 :", fileSearchPath)
 		fileSearchPath = strings.TrimRight(config.Server.RrdPath, "/") + "/" + strings.Replace(fileSearchPath, ":", "/", -1) + ".rrd"
+		//fmt.Println("file search 2 :", fileSearchPath)
 
 		fileNameArray, _ := zglob.Glob(fileSearchPath)
 		for _, filePath := range fileNameArray {
@@ -191,21 +267,6 @@ func query(w http.ResponseWriter, r *http.Request) {
 			if to.After(lastUpdate) && lastUpdate.After(from) {
 				to = lastUpdate
 			}
-			//This line is to enable rrd calculations
-			//DEFA = filepathA ?
-			//DEFB = filepathB ?
-			//rpn = (m:DEFA,m:DEFB,+)
-			newRPN = []
-			for e in rpn.split(",")
-			    if e.starts with ("m: ") and e.contains(".rrd")
-			           e.replace("m:"," ")
-				   name = extract(e)
-			           rrd.def(name,e)
-			           newRPN.insert(name)
-			    else
-			           newRPN.insert(e)
-			CDefres := rrd.CDef("count", newRPN)
-			// end of calculations CDefres := rrd.CDef("count", "def1,def2,+")
 			fetchRes, err := rrd.Fetch(filePath, "AVERAGE", from, to, time.Duration(config.Server.Step)*time.Second)
 			if err != nil {
 				fmt.Println("ERROR: Cannot retrieve time series data from ", filePath)
@@ -215,11 +276,13 @@ func query(w http.ResponseWriter, r *http.Request) {
 			dsIndex := int(infoRes["ds.index"].(map[string]interface{})[ds].(uint))
 			// The last point is likely to contain wrong data (mostly a big number)
 			// RowCnt-1 is for ignoring the last point (temporary solution)
+			
 			for i := 0; i < fetchRes.RowCnt-1; i++ {
 				value := fetchRes.ValueAt(dsIndex, i)
 				if !math.IsNaN(value) {
 					product := float64(config.Server.Multiplier) * value
 					points = append(points, []float64{product, float64(timestamp.Unix()) * 1000})
+					//fmt.Println("Points == ", points)
 				}
 				timestamp = timestamp.Add(fetchRes.Step)
 			}
