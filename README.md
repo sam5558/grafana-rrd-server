@@ -16,6 +16,10 @@ This server supports all endpoints (urls) defined in the [Grafana Simple JSON Da
 - Go
 - Grafana 3.0 and newer + Simple JSON Datasource plugin 1.0.0 and newer
 
+# What's new
+
+Added support for RRD capabilies (RPN calculations) - Basically any arithmetic operation can be sent on the fly from grafana to rrd.
+
 # Usage
 
 1. Install librrd-dev (rrdtool).
